@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Sauvegarde LBC (API Version)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Sauvegarde l'annonce complète (via API) pour avoir toutes les images et le texte propre.
+// @version      2
+// @description  Sauvegarde l'annonce complète (via API) 
 // @author       OptiPanda
 // @match        https://www.leboncoin.fr/ad/*
 // @grant        GM_addStyle
@@ -12,14 +12,13 @@
 (function() {
     'use strict';
 
-    const DELAY_BETWEEN_IMAGES = 800; // Délai entre chaque image (ms)
-    const WAIT_AFTER_TXT = 2000;      // Temps d'attente après le fichier texte avant de lancer les images
+    const DELAY_BETWEEN_IMAGES = 600; // Délai entre chaque image (ms) pour éviter les blocages navigateurs
 
     // 1. Initialisation du bouton
     window.addEventListener('load', () => {
         let saveButton = document.createElement('button');
         saveButton.innerHTML = '💾 Sauvegarder Annonce';
-        saveButton.onclick = startProcess; // On lance le nouveau process
+        saveButton.onclick = startProcess;
 
         GM_addStyle(`
             #lbc-save-button-final {
@@ -61,7 +60,7 @@
             // B. Préparation des variables
             const rawTitle = data.subject;
             const safeFilename = rawTitle.replace(/[\\/:*?"<>|]/g, '-').substring(0, 50).trim();
-            const images = data.images.urls; // Liste complète des URLS
+            const images = data.images.urls; 
             const description = data.body;
             const price = data.price ? data.price[0] : "Non défini";
             const url = window.location.href;
@@ -71,14 +70,10 @@
             button.innerHTML = '📄 Sauvegarde Texte...';
             saveTextFile(safeFilename, rawTitle, price, description, url, datePubli);
 
-            // D. Pause pour laisser l'utilisateur gérer le fichier texte
-            button.innerHTML = '⏳ Attente (2s)...';
-            await new Promise(resolve => setTimeout(resolve, WAIT_AFTER_TXT));
-
-            // E. Sauvegarde des images
+            // D. Sauvegarde des images (Lancée immédiatement)
             await saveAllImagesSequentially(safeFilename, images, button);
 
-            // F. Fin
+            // E. Fin
             button.innerHTML = '✅ Terminé !';
             setTimeout(() => {
                 button.innerHTML = '💾 Sauvegarder Annonce';
@@ -87,28 +82,21 @@
 
         } catch (error) {
             console.error("Erreur Sauvegarde :", error);
-            button.innerHTML = '❌ Erreur (voir console)';
+            button.innerHTML = '❌ Erreur';
             setTimeout(() => { button.disabled = false; }, 3000);
         }
     }
 
-    // --- HELPER : Récupérer les données depuis l'API LBC ---
+    // --- HELPER : API ---
     function getApiData(postId) {
         return fetch(`https://api.leboncoin.fr/finder/classified/${postId}`)
             .then(res => res.json())
             .catch(err => { console.error(err); return null; });
     }
 
-    // 3. Sauvegarde du texte (Plus propre, sans simuler de clic "voir plus")
+    // 3. Sauvegarde du texte
     function saveTextFile(safeFilename, title, price, description, url, date) {
-        const content = `Titre: ${title}
-Prix: ${price} €
-Date de publication: ${date}
-URL: ${url}
-
---- DESCRIPTION ---
-${description}
-`;
+        const content = `Titre: ${title}\nPrix: ${price} €\nDate: ${date}\nURL: ${url}\n\n--- DESCRIPTION ---\n${description}`;
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
@@ -119,7 +107,7 @@ ${description}
         setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
 
-    // 4. Sauvegarde des images (Basée sur la liste API, donc 100% complète)
+    // 4. Sauvegarde des images
     async function saveAllImagesSequentially(safeFilename, imageUrls, button) {
         if (!imageUrls || imageUrls.length === 0) return;
 
@@ -127,19 +115,13 @@ ${description}
         const total = imageUrls.length;
 
         for (const url of imageUrls) {
-            // On force la haute qualité si l'URL ne l'a pas déjà
-            // (L'API donne souvent des URL propres, mais on sécurise)
-            const cleanUrl = url;
-
-            // Nommage : Titre_image_01.jpg
             const filename = `${safeFilename}_image_${String(i + 1).padStart(2, '0')}.jpg`;
-
             button.innerHTML = `📥 Image ${i + 1}/${total}`;
 
-            await new Promise((resolve, reject) => {
+            await new Promise((resolve) => {
                 GM_xmlhttpRequest({
                     method: "GET",
-                    url: cleanUrl,
+                    url: url,
                     responseType: "blob",
                     onload: function(response) {
                         const link = document.createElement('a');
@@ -148,22 +130,15 @@ ${description}
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-
-                        // Petit délai pour laisser le navigateur respirer
                         setTimeout(() => {
                             URL.revokeObjectURL(link.href);
                             i++;
                             resolve();
-                        }, 100);
+                        }, 50); 
                     },
-                    onerror: (e) => {
-                        console.error("Echec image", e);
-                        resolve(); // On continue même si une image échoue
-                    }
+                    onerror: () => resolve() 
                 });
             });
-
-            // Délai défini en haut du script pour éviter de bombarder le navigateur
             await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_IMAGES));
         }
     }
